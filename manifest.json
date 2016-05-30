@@ -1,0 +1,26 @@
+{
+    "content_scripts": [
+        {
+            "js": [
+                "content-persistent.js"
+            ],
+            "matches": [
+                "<all_urls>"
+            ],
+            "run_at": "document_start"
+        }
+    ],
+    "description": "alf + f to get good font size",
+    "icons": {
+        "128": "images/icon_128.png",
+        "48": "images/icon_48.png",
+        "16": "images/icon_16.png"
+    },
+    "manifest_version": 2,
+    "name": "Readable Font Size",
+    "version": "1.0.0",
+    "web_accessible_resources": [
+        "images/status_loading.svg",
+        "images/status_loaded.svg"
+    ]
+}
