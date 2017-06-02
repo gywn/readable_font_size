@@ -160,11 +160,11 @@
         var text = html.innerText;
         nonEng = text.replace(/\w/g, '').length / text.length > 0.5;
         walkNode(html);
-        console.log(reduce(queries, (s, q, i) => s + (i + 1) + ': ' + q + '\n', 'Readable Font Size\n\n'));
+        console.log(reduce(queries, (s, q, i) => s + '\n' + (i + 1) + ': ' + q, 'Readable Font Size\n'));
         queries.forEach(q => each(safeQuerySelectorAll(q), n => {
-            n.__bfs_fontSize = n.style.fontSize;
-            n.__bfs_lineHeight = n.style.lineHeight;
-            n.__bfs_width = n.style.width;
+            n.__rfs_fontSize = n.style.fontSize;
+            n.__rfs_lineHeight = n.style.lineHeight;
+            n.__rfs_width = n.style.width;
         }));
         window.addEventListener('resize', update);
         update();
@@ -174,9 +174,9 @@
     let restore = () => {
         window.removeEventListener('resize', update);
         queries.forEach(q => each(safeQuerySelectorAll(q), n => {
-            n.style.fontSize = n.__bfs_fontSize;
-            n.style.lineHeight = n.__bfs_lineHeight;
-            n.style.width = n.__bfs_width;
+            n.style.fontSize = n.__rfs_fontSize;
+            n.style.lineHeight = n.__rfs_lineHeight;
+            n.style.width = n.__rfs_width;
             n.removeAttribute('rfs_query_id');
         }));
         queries = [];
