@@ -1,9 +1,15 @@
 /*jshint esversion: 6, strict: false */
+/* eslint-env es6 */
 /* global chrome */
 {
     let each = (col, op) => {
-        if (typeof col.forEach === 'function') {col.forEach(op);}
-        else {for (var i = 0; i < col.length; i++) {op(col[i], i, col);}}
+        if (typeof col.forEach === 'function') {
+            col.forEach(op);
+        } else {
+            for (var i = 0; i < col.length; i++) {
+                op(col[i], i, col);
+            }
+        }
     };
 
     let map = (col, op) => {
@@ -52,6 +58,7 @@
 
             var y = document.createElement('STYLE');
             y.innerHTML = '#rfs_status {' +
+                'box-sizing: content-box;' +
                 'position: fixed;' +
                 'right: 20px;' +
                 'bottom: 20px;' +
@@ -63,96 +70,177 @@
                 'border: 3px solid white;' +
                 'cursor: pointer;' +
                 'background: #00c853;' +
-            '}' +
-            '#rfs_status > div {' +
+                '}' +
+                '#rfs_status > div {' +
                 'height: 3px;' +
                 'width: 15px;' +
                 'background: white;' +
                 'margin-bottom: 3px;' +
                 'transition: width 0.2s;' +
-            '}' +
-            '#rfs_status:hover > div {' +
+                '}' +
+                '#rfs_status:hover > div {' +
                 'width: 22px;' +
-            '}';
+                '}';
             document.head.appendChild(y);
         }
         if (type === 'none') {
-                s.setAttribute('style', 'display: none;');
+            s.setAttribute('style', 'display: none;');
         } else if (type === 'loaded') {
-                s.setAttribute('style', '');
+            s.setAttribute('style', '');
         }
     };
 
-    const MIN_TBLOCK_WIDTH = 400;
-    const MIN_TBLOCK_HEIGHT = 30;
-    const MIN_TBLOCK_LENGTH = 50;
-    const TBLOCK_RE = new RegExp('[,!?，。！？⋯…]');
-    const CRIT_TEXT_RATIO = 0.5;  // less than this: direct text child nodes are discarded
+    const NDEBUG = true;
 
-    const MAX_FONT_SIZE = 16;
-    const OPT_LINE_HEIGHT = 1.5;  // times font size
-    const OPT_LINE_WIDTH = 37;  // times font size
-    const MAX_LINE_WIDTH = 43;
+    const MIN_TBLOCK_LENGTH = 150;
+    const TBLOCK_RE = new RegExp('[,!?，。！？⋯…]');
+
+    const OPT_LINE_HEIGHT = 1.5; // times font size
+    const OPT_LINE_WIDTH = 37; // times font size
+    const MAX_LINE_WIDTH = 39;
 
     var nonEng = false;
 
+    // A list of CSS selectors
     let queries = [];
-    let walkNode = (node, query) => {
-        if (node.nodeType !== 1 || node.offsetWidth < MIN_TBLOCK_WIDTH) {return false;}
 
-        var s = window.getComputedStyle(node);
-        if (s.display.match(/^inline|none/) || s.visibility === 'hidden') {return false;}
+    let debugNode = (node, mess) => {
+        if (NDEBUG) {
+            return;
+        }
+        try {
+            node.setAttribute('rfs_debug_message', mess);
+        } catch (e) {}
+    };
 
-        var direct = 0   // text length of direct text child nodes
-          , hidden = 0   // text length of elment child nodes
-          , isTBlock = false;
-        each(node.childNodes, n => {
-            if (n.nodeType === 1 && n.offsetWidth >= MIN_TBLOCK_WIDTH) {
-                var t = n.innerText;
-                hidden += t.trim().length;
-                isTBlock = isTBlock || TBLOCK_RE.exec(t);
-            } else if (n.nodeType === 3) {
-                var d = n.data;
-                direct += d.trim().length;
-                isTBlock = isTBlock || TBLOCK_RE.exec(d);
-            }
-        });
+    const TYPE_FULL_WIDTH = 0;
+    const TYPE_INLINE = 1;
+    const TYPE_OFF_FLOW = 2;
 
+    const walkNode = (node, query = '') => {
+        if (node.nodeType === 3) {
+            // Text node
+            return {
+                type: TYPE_INLINE,
+                textLength: node.data.length,
+                text: node.data
+            };
+        } else if (node.nodeType !== 1) {
+            // Anything other than text/element node
+            return {
+                type: TYPE_OFF_FLOW,
+                textLength: 0,
+                text: ''
+            };
+        }
+
+        // Element node
+        const s = window.getComputedStyle(node);
         var cs = map(node.classList, c => '.' + c).join('');
-        var id = node.id && !node.id.match(/([-_]|^)\d/) ? '#' + node.id : '';
-        var sQ = (!query ? '' : (query + '>')) + node.tagName + id + cs;
+        const nodeId = node.getAttribute('id');
+        const id = nodeId && !nodeId.match(/([-_]|^)\d/) ? '#' + nodeId : '';
+        var new_query = (query === '' ? '' : (query + '>')) + node.tagName + id + cs;
 
-        var tryAddChildren = () => {
-            return reduce(node.childNodes, (val, n) => walkNode(n, sQ) || val, false);
-        };
-        var addSelf = () => {
-            queries = dominatedAdd(queries, sQ);
-        };
+        if (s.display.match(/^none/) || s.visibility === 'hidden') {
+            // Invisible element node
+            debugNode(node, 'invisible');
+            return {
+                type: TYPE_FULL_WIDTH,
+                textLength: 0,
+                text: ''
+            };
+        }
+        if (s.display.match(/^inline/)) {
+            // Inline element node
+            const [textLength, text] = reduce(node.childNodes, ([accTextLength, accText], node) => {
+                const {
+                    type,
+                    textLength,
+                    text
+                } = walkNode(node, new_query);
+                return [accTextLength + textLength, accText + text];
+            }, [0, '']);
+            debugNode(node, 'inline');
+            return {
+                type: TYPE_INLINE,
+                textLength: textLength,
+                text: text
+            };
+        }
+        if (!s.display.match(/^(block|list-item)/)) {
+            // Unresizable element node
+            each(node.childNodes, n => walkNode(n, new_query));
+            debugNode(node, 'unresizable elem node');
+            return {
+                type: TYPE_FULL_WIDTH,
+                textLength: 0,
+                text: ''
+            };
+        }
 
-        if (!isTBlock || direct + hidden < MIN_TBLOCK_LENGTH) {
-            return false;
-        } else if (node.offsetHeight < MIN_TBLOCK_HEIGHT) {
-            return tryAddChildren();
+        // Resizable element node
+        let [maxSectionTextLength, _1, text] = reduce(
+            node.childNodes,
+            ([maxSectionTextLength, accSectionTextLength, accText], node) => {
+                const {
+                    type,
+                    textLength,
+                    text
+                } = walkNode(node, new_query);
+                switch (type) {
+                    case TYPE_INLINE: // anything other than inline text returns empty text
+                        const newAcc = accSectionTextLength + textLength;
+                        return [Math.max(maxSectionTextLength, newAcc), newAcc, accText + text];
+                    case TYPE_OFF_FLOW:
+                        return [maxSectionTextLength, accSectionTextLength, accText];
+                    case TYPE_FULL_WIDTH: // truncate text flow
+                        return [maxSectionTextLength, 0, accText];
+                }
+            }, [0, 0, '']
+        );
+
+        if (maxSectionTextLength > MIN_TBLOCK_LENGTH && TBLOCK_RE.exec(text)) {
+            queries = dominatedAdd(queries, new_query);
+        }
+        if (s.position.match(/absolute|fixed/) || s.float.match(/left|right/)) {
+            // Resizable but off-flow element node
+            debugNode(node, 'off-flow');
+            return {
+                type: TYPE_OFF_FLOW,
+                textLength: 0,
+                text: ''
+            };
         } else {
-            if (direct > CRIT_TEXT_RATIO * hidden) {
-                addSelf();
-                return true;
-            } else {
-                if (!tryAddChildren()) {addSelf();}
-                return true;
-            }
+            // Resizeable full-width element node
+            debugNode(node, 'full-width');
+            return {
+                type: TYPE_FULL_WIDTH,
+                textLength: 0,
+                text: ''
+            };
         }
     };
 
     let update = () => {
-        queries.forEach((q, i) => each(safeQuerySelectorAll(q), n => {
-            var width = n.offsetWidth > (MAX_FONT_SIZE * MAX_LINE_WIDTH) ? (MAX_FONT_SIZE * OPT_LINE_WIDTH) : n.offsetWidth;
-            var fsize = Math.min(MAX_FONT_SIZE, width / OPT_LINE_WIDTH);
-            n.style.fontSize = fsize + 'px';
-            n.style.lineHeight = fsize * OPT_LINE_HEIGHT * (nonEng ? 1.125 : 1) + 'px';
-            n.style.width = width + 'px';
-            n.setAttribute('rfs_query_id', i + 1);
+        // First pass
+        queries.forEach((q, i) => each(safeQuerySelectorAll(q), node => {
+            const fontSize = parseInt(window.getComputedStyle(node).fontSize),
+                width = node.offsetWidth;
+            node.__rfs_goalWidth = width > fontSize * MAX_LINE_WIDTH ? fontSize * OPT_LINE_WIDTH : 0;
+            node.__rfs_goalFontSize = fontSize;
         }));
+
+        // Second pass
+        document.body.style.display = 'none';
+        queries.forEach((q, i) => each(safeQuerySelectorAll(q), n => {
+            n.style.hypens = 'auto';
+            n.style.textAlign = 'justify';
+            n.style.lineHeight = n.__rfs_goalFontSize * OPT_LINE_HEIGHT * (nonEng ? 1.125 : 1) + 'px';
+            if (n.__rfs_goalWidth > 0) {
+                n.style.width = n.__rfs_goalWidth + 'px';
+            }
+        }));
+        document.body.style.display = '';
     };
 
     let saveAndUpdate = () => {
@@ -162,29 +250,30 @@
         walkNode(html);
         console.log(reduce(queries, (s, q, i) => s + '\n' + (i + 1) + ': ' + q, 'Readable Font Size\n'));
         queries.forEach(q => each(safeQuerySelectorAll(q), n => {
-            n.__rfs_fontSize = n.style.fontSize;
+            n.__rfs_hypens = n.style.hyphens;
             n.__rfs_lineHeight = n.style.lineHeight;
+            n.__rfs_textAlign = n.style.textAlign;
             n.__rfs_width = n.style.width;
         }));
-        window.addEventListener('resize', update);
+        // window.addEventListener('resize', update);
         update();
         displayStatus('loaded');
     };
 
     let restore = () => {
-        window.removeEventListener('resize', update);
+        // window.removeEventListener('resize', update);
         queries.forEach(q => each(safeQuerySelectorAll(q), n => {
-            n.style.fontSize = n.__rfs_fontSize;
+            n.style.hyphens = n.__rfs_hypens;
             n.style.lineHeight = n.__rfs_lineHeight;
+            n.style.textAlign = n.__rfs_textAlign;
             n.style.width = n.__rfs_width;
-            n.removeAttribute('rfs_query_id');
         }));
         queries = [];
         displayStatus('none');
     };
 
-    window.addEventListener('keypress', function (e) {
-        if (e.which === 402) {  // alt + f
+    window.addEventListener('keypress', function(e) {
+        if (e.which === 402) { // alt + f
             if (queries.length === 0) {
                 saveAndUpdate();
             } else {
